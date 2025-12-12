@@ -1,5 +1,5 @@
 """
-Lightweight NDViewer -write context here.
+Lightweight NDV-based viewer
 
 Supports: OME-TIFF and single-TIFF acquisitions with lazy loading via dask (specify how it is faster).
 """
