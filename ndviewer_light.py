@@ -289,7 +289,11 @@ class LightweightViewer(QWidget):
         if NDV_AVAILABLE:
             dummy = np.zeros((1, 100, 100), dtype=np.uint16)
             self.ndv_viewer = ndv.ArrayViewer(
-                dummy, channel_axis=0, channel_mode="composite", visible_axes=(-2, -1)
+                dummy,
+                channel_axis=0,
+                channel_mode="composite",
+                visible_axes=(-2, -1),
+                viewer_options={"show_3d_button": False},
             )
             layout.addWidget(self.ndv_viewer.widget(), 1)
         else:
@@ -834,6 +838,9 @@ class LightweightViewer(QWidget):
             channel_mode="composite",
             luts=luts,
             visible_axes=(-2, -1),  # 2D display (y, x), sliders for rest
+            viewer_options={
+                "show_3d_button": False
+            },  # Disable 3D mode to prevent OpenGL issues
         )
 
         # Replace widget
