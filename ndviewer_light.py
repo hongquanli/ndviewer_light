@@ -833,7 +833,7 @@ class LightweightViewer(QWidget):
             channel_axis=channel_axis,
             channel_mode="composite",
             luts=luts,
-            visible_axes=("y", "x"),  # 2D display, sliders for rest
+            visible_axes=(-2, -1),  # 2D display (y, x), sliders for rest
         )
 
         # Replace widget
