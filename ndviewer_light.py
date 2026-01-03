@@ -827,6 +827,13 @@ class LightweightViewer(QWidget):
         luts = data.attrs.get("luts", {})
         channel_axis = data.dims.index("channel") if "channel" in data.dims else None
 
+        # Check if images are too large for 3D volume rendering (GPU texture limit)
+        # Most GPUs have GL_MAX_3D_TEXTURE_SIZE of 2048 or 4096
+        max_3d_texture_size = 2048  # Conservative estimate
+        y_size = data.sizes.get("y", 0)
+        x_size = data.sizes.get("x", 0)
+        allow_3d = y_size <= max_3d_texture_size and x_size <= max_3d_texture_size
+
         # Recreate viewer with proper dimensions
         old_widget = self.ndv_viewer.widget()
         layout = self.layout()
@@ -837,6 +844,7 @@ class LightweightViewer(QWidget):
             channel_mode="composite",
             luts=luts,
             visible_axes=(-2, -1),  # 2D display (y, x), sliders for rest
+            viewer_options={"show_3d_button": allow_3d},
         )
 
         # Replace widget
