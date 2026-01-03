@@ -71,12 +71,102 @@ try:
     import tifffile as tf
     import xarray as xr
     import dask.array as da
-    from dask import delayed
     from functools import lru_cache
+    from scipy.ndimage import zoom as ndimage_zoom
 
     LAZY_LOADING_AVAILABLE = True
 except ImportError:
     LAZY_LOADING_AVAILABLE = False
+
+# OpenGL 3D texture size limit (conservative estimate for most GPUs)
+MAX_3D_TEXTURE_SIZE = 2048
+
+# Register custom DataWrapper for automatic 3D downsampling
+if NDV_AVAILABLE and LAZY_LOADING_AVAILABLE:
+    from ndv.models._data_wrapper import XarrayWrapper
+    from collections.abc import Mapping
+
+    class Downsampling3DXarrayWrapper(XarrayWrapper):
+        """XarrayWrapper that automatically downsamples 3D volumes for OpenGL.
+
+        This wrapper extends NDV's XarrayWrapper to detect when a 3D volume
+        request would exceed OpenGL texture limits and automatically downsamples
+        the data. 2D slice requests remain at full resolution.
+        """
+
+        # Higher priority than default XarrayWrapper (50)
+        PRIORITY = 40
+
+        def __init__(self, data: "xr.DataArray"):
+            super().__init__(data)
+            self._max_texture_size = MAX_3D_TEXTURE_SIZE
+
+        @classmethod
+        def supports(cls, obj) -> bool:
+            """Check if this wrapper supports the given object."""
+            if not LAZY_LOADING_AVAILABLE:
+                return False
+            return isinstance(obj, xr.DataArray)
+
+        def isel(self, index: Mapping[int, int | slice]) -> np.ndarray:
+            """Return a slice of the data, with automatic 3D downsampling.
+
+            For 2D slices (viewing a single plane), returns full resolution.
+            For 3D volumes (viewing a stack), downsamples if needed to fit
+            within OpenGL texture limits.
+
+            We use dimension names to identify spatial dimensions (z, y, x)
+            and only downsample those, preserving channel dimensions.
+            """
+            # Get the data using parent's implementation
+            data = super().isel(index)
+
+            # Determine which original dimensions are non-singleton
+            dims = self._data.dims
+            non_singleton_dims = []
+            for i, dim in enumerate(dims):
+                idx = index.get(i, slice(None))
+                if isinstance(idx, slice):
+                    dim_size = self._data.shape[i]
+                    start = idx.start or 0
+                    stop = idx.stop or dim_size
+                    if stop - start > 1:
+                        non_singleton_dims.append(str(dim).lower())
+
+            # Check if we have spatial z dimension (indicates 3D volume)
+            spatial_z_names = {"z", "z_level", "depth", "focus"}
+            has_z = any(d in spatial_z_names for d in non_singleton_dims)
+            if not has_z:
+                return data  # Not a 3D volume request
+
+            # Check if spatial dimensions exceed the texture limit
+            # Find max of y, x dimensions which are always spatial
+            spatial_max = max(data.shape[-2:]) if data.ndim >= 2 else 0
+
+            if spatial_max > self._max_texture_size:
+                scale = self._max_texture_size / spatial_max
+                logger.info(
+                    f"Downsampling 3D volume from {data.shape} "
+                    f"(scale={scale:.3f}) for OpenGL rendering"
+                )
+
+                # Build zoom factors for ALL dimensions (preserve original ndim)
+                # Spatial dims (z, y, x) get scaled, others preserved at 1.0
+                spatial_names = spatial_z_names | {"y", "x"}
+                zoom_factors = []
+                for i, dim in enumerate(dims):
+                    dim_lower = str(dim).lower()
+                    if dim_lower in spatial_names:
+                        zoom_factors.append(scale)
+                    else:
+                        zoom_factors.append(1.0)
+
+                # Use order=0 (nearest neighbor) for speed - 90x faster than bilinear
+                downsampled = ndimage_zoom(data, zoom_factors, order=0)
+                return downsampled.astype(data.dtype)
+
+            return data
+
 
 # Filename patterns (from common.py)
 FPATTERN = re.compile(
