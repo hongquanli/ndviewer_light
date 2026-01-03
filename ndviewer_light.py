@@ -97,9 +97,40 @@ if NDV_AVAILABLE and LAZY_LOADING_AVAILABLE:
         # Higher priority than default XarrayWrapper (50)
         PRIORITY = 40
 
+        # Class-level cache for OpenGL texture limit (queried once, shared by all instances)
+        _cached_max_texture_size: Optional[int] = None
+
         def __init__(self, data: "xr.DataArray"):
             super().__init__(data)
-            self._max_texture_size = MAX_3D_TEXTURE_SIZE
+
+        @classmethod
+        def _get_max_texture_size(cls) -> int:
+            """Query and cache the GPU's GL_MAX_3D_TEXTURE_SIZE.
+
+            This is queried lazily on first 3D request when OpenGL context exists.
+            Falls back to conservative default if query fails or no context available.
+            """
+            if cls._cached_max_texture_size is None:
+                try:
+                    # Check if vispy has an active GL context before querying
+                    # Calling OpenGL without a context causes segfault
+                    from vispy import app
+
+                    canvas = app.Canvas._current_canvas
+                    if canvas is None:
+                        logger.debug("No vispy canvas - using fallback texture size")
+                        cls._cached_max_texture_size = MAX_3D_TEXTURE_SIZE
+                        return cls._cached_max_texture_size
+
+                    from OpenGL.GL import glGetIntegerv, GL_MAX_3D_TEXTURE_SIZE
+
+                    limit = glGetIntegerv(GL_MAX_3D_TEXTURE_SIZE)
+                    cls._cached_max_texture_size = int(limit)
+                    logger.info(f"Detected GL_MAX_3D_TEXTURE_SIZE: {limit}")
+                except Exception as e:
+                    logger.debug(f"Failed to query GL_MAX_3D_TEXTURE_SIZE: {e}")
+                    cls._cached_max_texture_size = MAX_3D_TEXTURE_SIZE  # Fallback
+            return cls._cached_max_texture_size
 
         @classmethod
         def supports(cls, obj) -> bool:
@@ -142,9 +173,10 @@ if NDV_AVAILABLE and LAZY_LOADING_AVAILABLE:
             # Check if spatial dimensions exceed the texture limit
             # Find max of y, x dimensions which are always spatial
             spatial_max = max(data.shape[-2:]) if data.ndim >= 2 else 0
+            max_texture_size = self._get_max_texture_size()
 
-            if spatial_max > self._max_texture_size:
-                scale = self._max_texture_size / spatial_max
+            if spatial_max > max_texture_size:
+                scale = max_texture_size / spatial_max
                 logger.info(
                     f"Downsampling 3D volume from {data.shape} "
                     f"(scale={scale:.3f}) for OpenGL rendering"
@@ -917,16 +949,9 @@ class LightweightViewer(QWidget):
         luts = data.attrs.get("luts", {})
         channel_axis = data.dims.index("channel") if "channel" in data.dims else None
 
-        # Check if images are too large for 3D volume rendering (GPU texture limit)
-        # Most GPUs have GL_MAX_3D_TEXTURE_SIZE of 2048 or 4096
-        max_3d_texture_size = 2048  # Conservative estimate
-        y_size = data.sizes.get("y", 0)
-        x_size = data.sizes.get("x", 0)
-
-        # For large images, disable 3D button since GPU texture limits prevent it
-        allow_3d = y_size <= max_3d_texture_size and x_size <= max_3d_texture_size
-
         # Recreate viewer with proper dimensions
+        # Note: 3D button is always enabled - Downsampling3DXarrayWrapper handles
+        # large volumes by automatically downsampling them for OpenGL rendering
         old_widget = self.ndv_viewer.widget()
         layout = self.layout()
 
@@ -936,7 +961,6 @@ class LightweightViewer(QWidget):
             channel_mode="composite",
             luts=luts,
             visible_axes=(-2, -1),  # 2D display (y, x), sliders for rest
-            viewer_options={"show_3d_button": allow_3d},
         )
 
         # Replace widget

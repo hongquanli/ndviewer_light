@@ -11,8 +11,7 @@ import numpy as np
 import pytest
 import xarray as xr
 
-# Import to register the wrapper
-import ndviewer_light
+# Import from ndviewer_light to register the wrapper (side effect of import)
 from ndviewer_light import MAX_3D_TEXTURE_SIZE
 
 
