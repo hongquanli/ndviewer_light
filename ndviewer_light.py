@@ -629,13 +629,12 @@ class LightweightViewer(QWidget):
             # Build channel name list - use extracted names or generate fallback
             if not channel_names or len(channel_names) != n_c:
                 channel_names = [f"Ch{i}" for i in range(n_c)]
-            coords_base = {}
-            for ax, dim in zip(axes, shape):
-                key = axis_map.get(ax, f"ax_{ax}")
-                if key == "channel":
-                    coords_base[key] = channel_names
-                else:
-                    coords_base[key] = list(range(dim))
+            # Keep coordinates numeric (indices) for all axes, including "channel".
+            # Channel names are stored separately in attrs and applied via _lut_controllers.
+            coords_base = {
+                axis_map.get(ax, f"ax_{ax}"): list(range(dim))
+                for ax, dim in zip(axes, shape)
+            }
 
             # Per-axis chunking: 1 for non-spatial, full for spatial
             chunks = []
@@ -846,11 +845,39 @@ class LightweightViewer(QWidget):
         old_widget.deleteLater()
         layout.insertWidget(idx, self.ndv_viewer.widget(), 1)
 
-        # Update channel labels after viewer is ready
-        QTimer.singleShot(500, self._update_channel_labels)
+        # Update channel labels after viewer is ready.
+        # Use retry mechanism instead of fixed delay since NDV initialization timing varies.
+        self._pending_channel_label_retries = 20
+        self._schedule_channel_label_update()
+
+    def _schedule_channel_label_update(self):
+        """Retry updating channel labels until the NDV viewer is ready or we time out."""
+        if not self.ndv_viewer or self._xarray_data is None:
+            return
+
+        remaining = getattr(self, "_pending_channel_label_retries", 0)
+        if remaining <= 0:
+            logger.debug("Channel label update timed out after retries")
+            return
+
+        # Check if _lut_controllers is available (indicates viewer is ready)
+        # Note: _lut_controllers is a private API that may change in future ndv versions.
+        # See: https://github.com/pyapp-kit/ndv/issues/XXX (no public API exists yet)
+        controllers = getattr(self.ndv_viewer, "_lut_controllers", None)
+        if controllers:
+            self._update_channel_labels()
+            return
+
+        # Not ready yet; schedule another check
+        self._pending_channel_label_retries = remaining - 1
+        QTimer.singleShot(100, self._schedule_channel_label_update)
 
     def _update_channel_labels(self):
-        """Manually update channel labels in the NDV viewer."""
+        """Manually update channel labels in the NDV viewer.
+
+        This uses ndv's private _lut_controllers API to set display names.
+        The approach is fragile and may break with future ndv updates.
+        """
         if not self.ndv_viewer or self._xarray_data is None:
             return
 
