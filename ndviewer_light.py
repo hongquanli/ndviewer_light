@@ -293,7 +293,6 @@ class LightweightViewer(QWidget):
                 channel_axis=0,
                 channel_mode="composite",
                 visible_axes=(-2, -1),
-                viewer_options={"show_3d_button": False},
             )
             layout.addWidget(self.ndv_viewer.widget(), 1)
         else:
@@ -628,7 +627,7 @@ class LightweightViewer(QWidget):
                 except Exception as e:
                     logger.debug("Failed to parse OME metadata: %s", e)
 
-            axis_map = {"T": "time", "Z": "z_level", "C": "channel", "Y": "y", "X": "x"}
+            axis_map = {"T": "time", "Z": "z", "C": "channel", "Y": "y", "X": "x"}
             dims_base = [axis_map.get(ax, f"ax_{ax}") for ax in axes]
             coords_base = {
                 axis_map.get(ax, f"ax_{ax}"): list(range(dim))
@@ -688,10 +687,10 @@ class LightweightViewer(QWidget):
 
             xarr = xr.DataArray(full_array, dims=dims_full, coords=coords_full)
             # Ensure standard dims exist with singleton axes if missing
-            for ax in ["time", "fov", "z_level", "channel", "y", "x"]:
+            for ax in ["time", "fov", "z", "channel", "y", "x"]:
                 if ax not in xarr.dims:
                     xarr = xarr.expand_dims({ax: [0]})
-            xarr = xarr.transpose("time", "fov", "z_level", "channel", "y", "x")
+            xarr = xarr.transpose("time", "fov", "z", "channel", "y", "x")
             xarr.attrs["luts"] = luts
             xarr.attrs["_open_tifs"] = tifs_kept
             return xarr
@@ -803,11 +802,11 @@ class LightweightViewer(QWidget):
 
             xarr = xr.DataArray(
                 stacked,
-                dims=["time", "fov", "z_level", "channel", "y", "x"],
+                dims=["time", "fov", "z", "channel", "y", "x"],
                 coords={
                     "time": times,
                     "fov": list(range(n_fov)),
-                    "z_level": z_levels,
+                    "z": z_levels,
                     "channel": channels,
                 },
             )
@@ -838,9 +837,6 @@ class LightweightViewer(QWidget):
             channel_mode="composite",
             luts=luts,
             visible_axes=(-2, -1),  # 2D display (y, x), sliders for rest
-            viewer_options={
-                "show_3d_button": False
-            },  # Disable 3D mode to prevent OpenGL issues
         )
 
         # Replace widget
