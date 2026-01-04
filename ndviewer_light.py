@@ -148,8 +148,10 @@ if NDV_AVAILABLE and LAZY_LOADING_AVAILABLE:
             For 3D volumes (viewing a stack), downsamples if needed to fit
             within OpenGL texture limits.
 
-            We use dimension names to identify spatial dimensions (z, y, x)
-            and only downsample those, preserving channel dimensions.
+            Downsampling strategy:
+            - z: scaled independently only if z exceeds the texture limit
+            - x/y: scaled uniformly (same factor) to preserve aspect ratio
+            - channel/time/fov: never scaled
             """
             # Get the data using parent's implementation
             data = super().isel(index)
@@ -178,7 +180,6 @@ if NDV_AVAILABLE and LAZY_LOADING_AVAILABLE:
             # Build per-dimension scale factors (only for dimensions in output data)
             # - z: scaled independently (if it exceeds limit)
             # - x/y: use same scale factor to preserve aspect ratio
-            spatial_names = spatial_z_names | {"y", "x"}
 
             # First pass: find dimensions and their sizes in output data
             dim_info = []  # [(dim_name, size), ...]

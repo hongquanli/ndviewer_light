@@ -198,6 +198,24 @@ class TestDownsampling3DXarrayWrapper:
         result_ratio = result.shape[1] / result.shape[2]
         assert abs(original_ratio - result_ratio) < 0.1
 
+    def test_large_z_downsampled_independently(self, data_wrapper_class):
+        """Test that z is downsampled when z itself exceeds the texture limit."""
+        large_z = MAX_3D_TEXTURE_SIZE + 500  # 2548 z slices
+        small_xy = 512  # xy within limit
+        data = xr.DataArray(
+            np.zeros((large_z, small_xy, small_xy), dtype=np.uint16),
+            dims=["z", "y", "x"],
+        )
+        wrapper = data_wrapper_class.create(data)
+
+        result = wrapper.isel({0: slice(None), 1: slice(None), 2: slice(None)})
+
+        # z exceeds limit, should be scaled down to MAX_3D_TEXTURE_SIZE
+        assert result.shape[0] == MAX_3D_TEXTURE_SIZE
+        # xy doesn't exceed limit, should be unchanged
+        assert result.shape[1] == small_xy
+        assert result.shape[2] == small_xy
+
     def test_multichannel_all_channels_3d(self, data_wrapper_class):
         """Test 4D data (z, channel, y, x) with all channels requested.
 
