@@ -903,6 +903,8 @@ class LightweightViewer(QWidget):
                     controller = controllers[i]
                     controller.key = name
                     if hasattr(controller, "synchronize"):
+                        # Propagate the updated key to the NDV UI so the channel
+                        # label is displayed in the LUT controls.
                         controller.synchronize()
                     else:
                         logger.debug(
