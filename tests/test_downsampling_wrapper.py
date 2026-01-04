@@ -89,7 +89,7 @@ class TestDownsampling3DXarrayWrapper:
         n_channels = 4
         data = xr.DataArray(
             np.random.randint(
-                0, 65535, (10, n_channels, large_size, large_size), dtype=np.uint16
+                0, 65536, (10, n_channels, large_size, large_size), dtype=np.uint16
             ),
             dims=["z", "channel", "y", "x"],
         )
@@ -126,7 +126,7 @@ class TestDownsampling3DXarrayWrapper:
         n_channels = 4
         data = xr.DataArray(
             np.random.randint(
-                0, 65535, (n_channels, large_size, large_size), dtype=np.uint16
+                0, 65536, (n_channels, large_size, large_size), dtype=np.uint16
             ),
             dims=["channel", "y", "x"],  # Named 'channel' so NOT treated as spatial
         )
@@ -143,7 +143,7 @@ class TestDownsampling3DXarrayWrapper:
         data = xr.DataArray(
             np.random.randint(
                 0,
-                65535,
+                65536,
                 (n_z, MAX_3D_TEXTURE_SIZE, MAX_3D_TEXTURE_SIZE),
                 dtype=np.uint16,
             ),
@@ -216,6 +216,35 @@ class TestDownsampling3DXarrayWrapper:
         assert result.shape[1] == small_xy
         assert result.shape[2] == small_xy
 
+    def test_integer_indexing_drops_dimension(self, data_wrapper_class):
+        """Test that integer indexing correctly drops dimensions.
+
+        When isel() receives an integer index (not a slice), that dimension
+        is dropped from the output. The zoom_factors should only include
+        factors for remaining dimensions.
+        """
+        large_size = MAX_3D_TEXTURE_SIZE + 1000
+        n_z = 10
+        n_channels = 3
+        data = xr.DataArray(
+            np.random.randint(
+                0, 65536, (n_z, n_channels, large_size, large_size), dtype=np.uint16
+            ),
+            dims=["z", "channel", "y", "x"],
+        )
+        wrapper = data_wrapper_class.create(data)
+
+        # Use integer index for channel (drops that dimension)
+        # Result should be 3D: (z, y, x)
+        result = wrapper.isel({0: slice(None), 1: 0, 2: slice(None), 3: slice(None)})
+
+        # Verify dimension was dropped
+        assert result.ndim == 3
+        # z unchanged, y/x downsampled
+        assert result.shape[0] == n_z
+        assert result.shape[1] == MAX_3D_TEXTURE_SIZE
+        assert result.shape[2] == MAX_3D_TEXTURE_SIZE
+
     def test_multichannel_all_channels_3d(self, data_wrapper_class):
         """Test 4D data (z, channel, y, x) with all channels requested.
 
@@ -228,7 +257,7 @@ class TestDownsampling3DXarrayWrapper:
         n_channels = 3
         data = xr.DataArray(
             np.random.randint(
-                0, 65535, (n_z, n_channels, large_size, large_size), dtype=np.uint16
+                0, 65536, (n_z, n_channels, large_size, large_size), dtype=np.uint16
             ),
             dims=["z", "channel", "y", "x"],
         )

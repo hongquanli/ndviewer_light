@@ -116,11 +116,13 @@ if NDV_AVAILABLE and LAZY_LOADING_AVAILABLE:
                     # Calling OpenGL without a context causes segfault
                     from vispy import app
 
-                    # Use getattr for defensive access to private attribute
-                    # (may not exist in all vispy versions)
-                    canvas = getattr(app.Canvas, "_current_canvas", None)
-                    if canvas is None:
-                        logger.debug("No vispy canvas - using fallback texture size")
+                    # Check for active vispy application - use _backend_module which
+                    # is set when a backend is actually loaded and initialized
+                    backend = getattr(app, "_backend_module", None)
+                    if backend is None:
+                        logger.debug(
+                            "No vispy backend loaded - using fallback texture size"
+                        )
                         cls._cached_max_texture_size = MAX_3D_TEXTURE_SIZE
                         return cls._cached_max_texture_size
 
