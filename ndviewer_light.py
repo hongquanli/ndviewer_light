@@ -273,6 +273,7 @@ class LightweightViewer(QWidget):
         self._open_handles = []  # Keep tif handles alive when mmap is used
         self._last_sig = None
         self._refresh_timer = None
+        self._channel_label_generation = 0  # Generation counter for retry cancellation
         self._setup_ui()
         self.load_dataset(dataset_path)
         self._setup_live_refresh()
@@ -855,14 +856,14 @@ class LightweightViewer(QWidget):
         # Update channel labels after viewer is ready.
         # Use retry mechanism instead of fixed delay since NDV initialization timing varies.
         # Increment generation to cancel any pending retries from previous loads.
-        self._channel_label_generation = getattr(self, "_channel_label_generation", 0) + 1
+        self._channel_label_generation += 1
         self._pending_channel_label_retries = 20
         self._schedule_channel_label_update(self._channel_label_generation)
 
     def _schedule_channel_label_update(self, generation: int):
         """Retry updating channel labels until the NDV viewer is ready or we time out."""
         # Check if this callback is from a stale generation (viewer was replaced)
-        if getattr(self, "_channel_label_generation", 0) != generation:
+        if self._channel_label_generation != generation:
             return
 
         if not self.ndv_viewer or self._xarray_data is None:
@@ -903,6 +904,7 @@ class LightweightViewer(QWidget):
             if not controllers:
                 return
 
+            updated_count = 0
             for i, name in enumerate(channel_names):
                 if i in controllers:
                     controller = controllers[i]
@@ -918,6 +920,10 @@ class LightweightViewer(QWidget):
                             i,
                             name,
                         )
+                    updated_count += 1
+            logger.debug(
+                "Updated %d channel labels: %s", updated_count, channel_names[:updated_count]
+            )
         except Exception as e:
             logger.debug("Failed to update channel labels: %s", e)
 
