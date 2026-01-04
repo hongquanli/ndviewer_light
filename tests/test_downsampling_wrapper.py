@@ -170,8 +170,12 @@ class TestDownsampling3DXarrayWrapper:
 
         assert result.dtype == np.uint16
 
-    def test_downsampling_uniform_scaling(self, data_wrapper_class):
-        """Test that downsampling uses uniform scaling (aspect ratio preserved)."""
+    def test_downsampling_z_independent_xy_uniform(self, data_wrapper_class):
+        """Test that z is scaled independently while xy preserves aspect ratio.
+
+        - z: only downsampled if z itself exceeds the limit
+        - x/y: use same scale factor (based on max) to preserve aspect ratio
+        """
         n_z = 10
         data = xr.DataArray(
             np.random.randint(0, 65536, (n_z, 4000, 3000), dtype=np.uint16),
@@ -181,12 +185,18 @@ class TestDownsampling3DXarrayWrapper:
 
         result = wrapper.isel({0: slice(None), 1: slice(None), 2: slice(None)})
 
-        # Check aspect ratio is approximately preserved
+        # z (10) doesn't exceed limit, should be unchanged
+        assert result.shape[0] == n_z
+        # xy uses uniform scale based on max(4000, 3000) = 4000
+        # scale = 2048/4000 = 0.512
+        # y: 4000 * 0.512 = 2048, x: 3000 * 0.512 = 1536
+        assert result.shape[1] == MAX_3D_TEXTURE_SIZE  # y scaled to limit
+        assert result.shape[2] < MAX_3D_TEXTURE_SIZE  # x scaled proportionally
+
+        # Verify aspect ratio is preserved
         original_ratio = 4000 / 3000
         result_ratio = result.shape[1] / result.shape[2]
-        assert (
-            abs(original_ratio - result_ratio) < 0.1
-        )  # Allow small deviation due to rounding
+        assert abs(original_ratio - result_ratio) < 0.1
 
     def test_multichannel_all_channels_3d(self, data_wrapper_class):
         """Test 4D data (z, channel, y, x) with all channels requested.

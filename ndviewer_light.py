@@ -172,32 +172,49 @@ if NDV_AVAILABLE and LAZY_LOADING_AVAILABLE:
             if not has_z:
                 return data  # Not a 3D volume request
 
-            # Check if spatial dimensions exceed the texture limit
-            # Find max of y, x dimensions which are always spatial
-            spatial_max = max(data.shape[-2:]) if data.ndim >= 2 else 0
+            # Check if any spatial dimension exceeds the texture limit
             max_texture_size = self._get_max_texture_size()
 
-            if spatial_max > max_texture_size:
-                scale = max_texture_size / spatial_max
+            # Build per-dimension scale factors (only for dimensions in output data)
+            # - z: scaled independently (if it exceeds limit)
+            # - x/y: use same scale factor to preserve aspect ratio
+            spatial_names = spatial_z_names | {"y", "x"}
+
+            # First pass: find dimensions and their sizes in output data
+            dim_info = []  # [(dim_name, size), ...]
+            for i, dim in enumerate(dims):
+                idx = index.get(i, slice(None))
+                if isinstance(idx, int):
+                    continue  # Dropped dimension
+                dim_info.append((str(dim).lower(), data.shape[len(dim_info)]))
+
+            # Calculate xy scale factor (uniform for x and y to preserve aspect ratio)
+            xy_sizes = [size for name, size in dim_info if name in {"y", "x"}]
+            xy_max = max(xy_sizes) if xy_sizes else 0
+            xy_scale = max_texture_size / xy_max if xy_max > max_texture_size else 1.0
+
+            # Build zoom factors
+            zoom_factors = []
+            needs_downsampling = False
+            for dim_name, dim_size in dim_info:
+                if dim_name in {"y", "x"}:
+                    # Use uniform xy scale to preserve aspect ratio
+                    zoom_factors.append(xy_scale)
+                    if xy_scale < 1.0:
+                        needs_downsampling = True
+                elif dim_name in spatial_z_names and dim_size > max_texture_size:
+                    # z scaled independently
+                    z_scale = max_texture_size / dim_size
+                    zoom_factors.append(z_scale)
+                    needs_downsampling = True
+                else:
+                    zoom_factors.append(1.0)
+
+            if needs_downsampling:
                 logger.info(
                     f"Downsampling 3D volume from {data.shape} "
-                    f"(scale={scale:.3f}) for OpenGL rendering"
+                    f"(factors={[f'{z:.3f}' for z in zoom_factors]}) for OpenGL rendering"
                 )
-
-                # Build zoom factors only for dimensions that remain in data
-                # Integer indices drop dimensions, slices keep them
-                spatial_names = spatial_z_names | {"y", "x"}
-                zoom_factors = []
-                for i, dim in enumerate(dims):
-                    idx = index.get(i, slice(None))
-                    if isinstance(idx, int):
-                        # This dimension was dropped from data, skip it
-                        continue
-                    dim_lower = str(dim).lower()
-                    if dim_lower in spatial_names:
-                        zoom_factors.append(scale)
-                    else:
-                        zoom_factors.append(1.0)
 
                 # Use order=0 (nearest neighbor) for speed - much faster than bilinear
                 try:
