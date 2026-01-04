@@ -135,8 +135,8 @@ if NDV_AVAILABLE and LAZY_LOADING_AVAILABLE:
         @classmethod
         def supports(cls, obj) -> bool:
             """Check if this wrapper supports the given object."""
-            if not LAZY_LOADING_AVAILABLE:
-                return False
+            # Note: LAZY_LOADING_AVAILABLE check is unnecessary here since this
+            # class is only defined when LAZY_LOADING_AVAILABLE is True (line 85)
             return isinstance(obj, xr.DataArray)
 
         def isel(self, index: Mapping[int, int | slice]) -> np.ndarray:
@@ -194,8 +194,12 @@ if NDV_AVAILABLE and LAZY_LOADING_AVAILABLE:
                         zoom_factors.append(1.0)
 
                 # Use order=0 (nearest neighbor) for speed - 90x faster than bilinear
-                downsampled = ndimage_zoom(data, zoom_factors, order=0)
-                return downsampled.astype(data.dtype)
+                try:
+                    downsampled = ndimage_zoom(data, zoom_factors, order=0)
+                    return downsampled.astype(data.dtype)
+                except Exception as e:
+                    logger.warning(f"Downsampling failed: {e}, returning original data")
+                    return data
 
             return data
 

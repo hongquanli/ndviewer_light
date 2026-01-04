@@ -139,7 +139,12 @@ def main() -> int:
     )
     ap.add_argument("--region", default="R0")
     ap.add_argument(
-        "--n-z", type=int, default=1, help="Number of z slices (default: 1)"
+        "--n-z",
+        "--z",  # Keep --z as deprecated alias for backward compatibility
+        type=int,
+        default=1,
+        dest="n_z",
+        help="Number of z slices (default: 1)",
     )
     ap.add_argument(
         "--fovs-per-tick-in-t0",
