@@ -802,11 +802,13 @@ class LightweightViewer(QWidget):
             xarr = xr.DataArray(
                 stacked,
                 dims=["time", "fov", "z_level", "channel", "y", "x"],
+                # Keep coordinates numeric (indices) for all axes, including "channel".
+                # Channel names are stored separately in attrs and applied via _lut_controllers.
                 coords={
                     "time": times,
                     "fov": list(range(n_fov)),
                     "z_level": z_levels,
-                    "channel": channels,
+                    "channel": list(range(n_c)),
                 },
             )
             xarr.attrs["luts"] = luts
@@ -847,11 +849,17 @@ class LightweightViewer(QWidget):
 
         # Update channel labels after viewer is ready.
         # Use retry mechanism instead of fixed delay since NDV initialization timing varies.
+        # Increment generation to cancel any pending retries from previous loads.
+        self._channel_label_generation = getattr(self, "_channel_label_generation", 0) + 1
         self._pending_channel_label_retries = 20
-        self._schedule_channel_label_update()
+        self._schedule_channel_label_update(self._channel_label_generation)
 
-    def _schedule_channel_label_update(self):
+    def _schedule_channel_label_update(self, generation: int):
         """Retry updating channel labels until the NDV viewer is ready or we time out."""
+        # Check if this callback is from a stale generation (viewer was replaced)
+        if getattr(self, "_channel_label_generation", 0) != generation:
+            return
+
         if not self.ndv_viewer or self._xarray_data is None:
             return
 
@@ -860,9 +868,9 @@ class LightweightViewer(QWidget):
             logger.debug("Channel label update timed out after retries")
             return
 
-        # Check if _lut_controllers is available (indicates viewer is ready)
-        # Note: _lut_controllers is a private API that may change in future ndv versions.
-        # See: https://github.com/pyapp-kit/ndv/issues/XXX (no public API exists yet)
+        # Check if _lut_controllers is available (indicates viewer is ready).
+        # Note: _lut_controllers is a private API that may change in future ndv versions;
+        # at the time of writing there is no stable public API for this behavior in ndv.
         controllers = getattr(self.ndv_viewer, "_lut_controllers", None)
         if controllers:
             self._update_channel_labels()
@@ -870,7 +878,7 @@ class LightweightViewer(QWidget):
 
         # Not ready yet; schedule another check
         self._pending_channel_label_retries = remaining - 1
-        QTimer.singleShot(100, self._schedule_channel_label_update)
+        QTimer.singleShot(100, lambda: self._schedule_channel_label_update(generation))
 
     def _update_channel_labels(self):
         """Manually update channel labels in the NDV viewer.
@@ -892,8 +900,17 @@ class LightweightViewer(QWidget):
 
             for i, name in enumerate(channel_names):
                 if i in controllers:
-                    controllers[i].key = name
-                    controllers[i].synchronize()
+                    controller = controllers[i]
+                    controller.key = name
+                    if hasattr(controller, "synchronize"):
+                        controller.synchronize()
+                    else:
+                        logger.debug(
+                            "LUT controller at index %d has no 'synchronize' method; "
+                            "channel label '%s' set but not synchronized",
+                            i,
+                            name,
+                        )
         except Exception as e:
             logger.debug("Failed to update channel labels: %s", e)
 
