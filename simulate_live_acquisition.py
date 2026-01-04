@@ -215,7 +215,7 @@ def main() -> int:
                     img = _make_plane(base, t=t, fov=fov, c=c).copy()
                     # Add z-dependent intensity variation
                     img = (img + np.uint16(z * 50)).astype(np.uint16)
-                    # Overlay "T=<t> FOV=<fov> Z=<z> CH=<idx>" into the pixels
+                    # Overlay "T=<t> F=<fov> Z=<z> C=<idx>" into the pixels
                     label = f"T={t:02d} F={fov} Z={z:02d} C={c}"
                     _draw_text(img, label, x=20, y=20, scale=10, value=60000)
                     _atomic_tiff_write(out, img)

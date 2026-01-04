@@ -116,7 +116,9 @@ if NDV_AVAILABLE and LAZY_LOADING_AVAILABLE:
                     # Calling OpenGL without a context causes segfault
                     from vispy import app
 
-                    canvas = app.Canvas._current_canvas
+                    # Use getattr for defensive access to private attribute
+                    # (may not exist in all vispy versions)
+                    canvas = getattr(app.Canvas, "_current_canvas", None)
                     if canvas is None:
                         logger.debug("No vispy canvas - using fallback texture size")
                         cls._cached_max_texture_size = MAX_3D_TEXTURE_SIZE
@@ -182,11 +184,15 @@ if NDV_AVAILABLE and LAZY_LOADING_AVAILABLE:
                     f"(scale={scale:.3f}) for OpenGL rendering"
                 )
 
-                # Build zoom factors for ALL dimensions (preserve original ndim)
-                # Spatial dims (z, y, x) get scaled, others preserved at 1.0
+                # Build zoom factors only for dimensions that remain in data
+                # Integer indices drop dimensions, slices keep them
                 spatial_names = spatial_z_names | {"y", "x"}
                 zoom_factors = []
                 for i, dim in enumerate(dims):
+                    idx = index.get(i, slice(None))
+                    if isinstance(idx, int):
+                        # This dimension was dropped from data, skip it
+                        continue
                     dim_lower = str(dim).lower()
                     if dim_lower in spatial_names:
                         zoom_factors.append(scale)
